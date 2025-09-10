@@ -101,3 +101,33 @@ def get_current_weather(input: str) -> dict:
             
     except Exception as e:
         return {"error": f"Failed to fetch current weather: {str(e)}"}
+
+def search_agricultural_info(query: str) -> dict:
+    """Search for agricultural information on the internet"""
+    try:
+        url = "https://google.serper.dev/search"
+        
+        payload = json.dumps({
+            "q": f"{query} agriculture farming",
+            "num": 5
+        })
+        
+        headers = {
+            'X-API-KEY': os.getenv("SERPER_API_KEY"),
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(url, headers=headers, data=payload)
+        
+        if response.status_code == 200:
+            search_results = response.json()
+            return {
+                "success": True,
+                "query": query,
+                "results": search_results.get("organic", [])
+            }
+        else:
+            return {"error": f"Search API request failed: {response.status_code}"}
+            
+    except Exception as e:
+        return {"error": f"Failed to search: {str(e)}"}
