@@ -131,3 +131,4 @@ def search_agricultural_info(query: str) -> dict:
             
     except Exception as e:
         return {"error": f"Failed to search: {str(e)}"}
+
