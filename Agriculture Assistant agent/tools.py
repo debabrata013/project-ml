@@ -9,6 +9,7 @@ from tensorflow.keras.preprocessing import image
 from PIL import Image
 from dotenv import load_dotenv
 from groq import Groq
+import datetime
 
 load_dotenv()
 
@@ -146,7 +147,7 @@ def search_agricultural_info(query: str) -> dict:
         return {"error": f"Failed to search: {str(e)}"}
 
 def predict_plant_disease(image_path: str) -> dict:
-    """Predict plant disease from image using trained CNN model"""
+    """Enhanced plant disease prediction with comprehensive image analysis"""
     try:
         models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
         model_path = os.path.join(models_dir, 'plant_disease_model.h5')
@@ -155,17 +156,23 @@ def predict_plant_disease(image_path: str) -> dict:
         if not os.path.exists(model_path) or not os.path.exists(classes_path):
             return {"error": "Plant disease model files not found"}
         
-        # Load model and classes
+        # Import the comprehensive image analyzer
+        from image_analysis_service import analyze_plant_image_comprehensive
+        
+        # Perform comprehensive image analysis
+        comprehensive_analysis = analyze_plant_image_comprehensive(image_path)
+        
+        # Load model and classes for ML prediction
         model = tf.keras.models.load_model(model_path)
         class_names = joblib.load(classes_path)
         
-        # Load and preprocess image
+        # Load and preprocess image for ML model
         img = image.load_img(image_path, target_size=(224, 224))
         img_array = image.img_to_array(img)
         img_array = np.expand_dims(img_array, axis=0)
         img_array /= 255.0
         
-        # Make prediction
+        # Make ML prediction
         predictions = model.predict(img_array)
         predicted_class_idx = np.argmax(predictions[0])
         confidence = predictions[0][predicted_class_idx]
@@ -176,16 +183,171 @@ def predict_plant_disease(image_path: str) -> dict:
         top_indices = np.argsort(predictions[0])[-3:][::-1]
         top_predictions = [(class_names[i], float(predictions[0][i])) for i in top_indices]
         
-        return {
+        # Combine ML prediction with comprehensive analysis
+        result = {
             "success": True,
-            "predicted_disease": predicted_class,
-            "confidence": float(confidence),
-            "top_predictions": top_predictions,
-            "recommendation": get_disease_treatment_advice(predicted_class)
+            "ml_prediction": {
+                "predicted_disease": predicted_class,
+                "confidence": float(confidence),
+                "top_predictions": top_predictions
+            },
+            "comprehensive_analysis": comprehensive_analysis,
+            "detailed_assessment": generate_detailed_plant_assessment(
+                predicted_class, confidence, comprehensive_analysis
+            ),
+            "treatment_recommendations": get_enhanced_treatment_advice(
+                predicted_class, comprehensive_analysis
+            )
         }
+        
+        return result
         
     except Exception as e:
         return {"error": f"Failed to predict plant disease: {str(e)}"}
+
+def generate_detailed_plant_assessment(ml_prediction, confidence, image_analysis):
+    """Generate detailed plant assessment combining ML and image analysis"""
+    try:
+        assessment = {
+            "disease_confirmation": "unknown",
+            "severity_assessment": "unknown",
+            "confidence_level": "low",
+            "key_symptoms": [],
+            "progression_stage": "unknown"
+        }
+        
+        # Extract image analysis results
+        if image_analysis.get("success"):
+            comp_assessment = image_analysis.get("comprehensive_assessment", {})
+            color_analysis = image_analysis.get("color_analysis", {})
+            texture_analysis = image_analysis.get("texture_analysis", {})
+            
+            # Combine ML confidence with image analysis
+            if confidence > 0.8 and comp_assessment.get("severity_level") != "minimal":
+                assessment["confidence_level"] = "high"
+                assessment["disease_confirmation"] = "confirmed"
+            elif confidence > 0.6:
+                assessment["confidence_level"] = "medium"
+                assessment["disease_confirmation"] = "likely"
+            else:
+                assessment["confidence_level"] = "low"
+                assessment["disease_confirmation"] = "possible"
+            
+            # Severity assessment
+            assessment["severity_assessment"] = comp_assessment.get("severity_level", "unknown")
+            
+            # Key symptoms from image analysis
+            symptoms = []
+            for condition, data in color_analysis.items():
+                if data.get("percentage", 0) > 5:
+                    symptoms.append(f"{condition.replace('_', ' ')}: {data['percentage']:.1f}%")
+            
+            if texture_analysis.get("spot_count", 0) > 10:
+                symptoms.append(f"Multiple lesions detected: {texture_analysis['spot_count']} spots")
+            
+            assessment["key_symptoms"] = symptoms
+            
+            # Progression stage
+            total_affected = sum([
+                color_analysis.get("brown_spots", {}).get("percentage", 0),
+                color_analysis.get("yellow_areas", {}).get("percentage", 0),
+                color_analysis.get("black_spots", {}).get("percentage", 0)
+            ])
+            
+            if total_affected > 40:
+                assessment["progression_stage"] = "advanced"
+            elif total_affected > 20:
+                assessment["progression_stage"] = "moderate"
+            elif total_affected > 5:
+                assessment["progression_stage"] = "early"
+            else:
+                assessment["progression_stage"] = "initial"
+        
+        return assessment
+        
+    except Exception as e:
+        return {"error": f"Assessment generation failed: {str(e)}"}
+
+def get_enhanced_treatment_advice(disease_name, image_analysis):
+    """Get enhanced treatment advice based on disease and image analysis"""
+    try:
+        # Base treatment advice
+        base_treatment = get_disease_treatment_advice(disease_name)
+        
+        enhanced_advice = {
+            "immediate_actions": [],
+            "treatment_protocol": base_treatment,
+            "monitoring_schedule": [],
+            "prevention_measures": [],
+            "severity_specific_actions": []
+        }
+        
+        if image_analysis.get("success"):
+            comp_assessment = image_analysis.get("comprehensive_assessment", {})
+            severity = comp_assessment.get("severity_level", "unknown")
+            
+            # Immediate actions based on severity
+            if severity == "severe":
+                enhanced_advice["immediate_actions"] = [
+                    "Remove severely affected leaves immediately",
+                    "Isolate plant if possible to prevent spread",
+                    "Apply emergency fungicide treatment",
+                    "Improve air circulation around plant"
+                ]
+                enhanced_advice["monitoring_schedule"] = [
+                    "Check daily for 1 week",
+                    "Weekly monitoring for 1 month",
+                    "Document progress with photos"
+                ]
+            elif severity == "moderate":
+                enhanced_advice["immediate_actions"] = [
+                    "Remove affected leaves",
+                    "Apply targeted treatment",
+                    "Adjust watering schedule"
+                ]
+                enhanced_advice["monitoring_schedule"] = [
+                    "Check every 2-3 days for 2 weeks",
+                    "Weekly monitoring thereafter"
+                ]
+            elif severity == "mild":
+                enhanced_advice["immediate_actions"] = [
+                    "Monitor closely",
+                    "Apply preventive treatment",
+                    "Optimize growing conditions"
+                ]
+                enhanced_advice["monitoring_schedule"] = [
+                    "Weekly monitoring",
+                    "Monthly health assessment"
+                ]
+            
+            # Prevention measures
+            enhanced_advice["prevention_measures"] = [
+                "Ensure proper plant spacing for air circulation",
+                "Water at soil level, avoid wetting leaves",
+                "Regular inspection for early detection",
+                "Maintain optimal soil drainage",
+                "Use disease-resistant varieties in future plantings"
+            ]
+            
+            # Severity-specific actions
+            disease_indicators = comp_assessment.get("disease_indicators", [])
+            if "Powdery mildew suspected" in disease_indicators:
+                enhanced_advice["severity_specific_actions"].append(
+                    "Increase air circulation and reduce humidity"
+                )
+            if "Bacterial or fungal infection" in disease_indicators:
+                enhanced_advice["severity_specific_actions"].append(
+                    "Apply copper-based bactericide/fungicide"
+                )
+            if "Nutrient deficiency" in str(disease_indicators):
+                enhanced_advice["severity_specific_actions"].append(
+                    "Soil test and nutrient supplementation recommended"
+                )
+        
+        return enhanced_advice
+        
+    except Exception as e:
+        return {"error": f"Enhanced treatment advice generation failed: {str(e)}"}
 
 def predict_crop_yield(input_data: str) -> dict:
     """Predict crop yield using trained ML model"""
@@ -430,22 +592,46 @@ def market_price_advisor(crop_query: str) -> dict:
     except Exception as e:
         return {"error": f"Failed to analyze market: {str(e)}"}
 
-def weather_farming_advisor(location_weather: str) -> dict:
-    """Advanced weather-based farming recommendations using Groq AI"""
+def weather_farming_advisor(input_data: str = None) -> dict:
+    """Advanced weather-based farming recommendations with automatic location detection"""
     try:
+        # Step 1: Get current location
+        location = get_current_location()
+        if "error" in location:
+            return {"error": f"Failed to get location: {location['error']}"}
+        
+        # Step 2: Get current weather
+        current_weather = get_current_weather("")  # Empty string triggers automatic location
+        if "error" in current_weather:
+            return {"error": f"Failed to get weather: {current_weather['error']}"}
+        
+        # Step 3: Get weather forecast
+        forecast = get_weather_forecast("")  # Empty string triggers automatic location
+        if "error" in forecast:
+            return {"error": f"Failed to get forecast: {forecast['error']}"}
+        
+        # Combine weather data
+        weather_data = {
+            "location": location,
+            "current": current_weather.get("current_weather", {}),
+            "forecast": forecast.get("forecast", {})
+        }
+        
+        # Generate AI-powered farming recommendations
         prompt = f"""
-        As a meteorological farming expert, analyze this weather data and provide farming advice:
+        As an agricultural expert, analyze this weather data and provide farming recommendations:
         
-        Weather Data: {location_weather}
+        Location: {location.get('city', 'Unknown')}, {location.get('country', 'Unknown')}
+        Current Weather: {json.dumps(weather_data['current'], indent=2)}
+        Forecast: {json.dumps(weather_data['forecast'], indent=2)}
         
-        Provide recommendations for:
+        Provide:
         1. Immediate farming activities (next 7 days)
         2. Crop protection strategies
-        3. Irrigation scheduling
+        3. Irrigation recommendations
         4. Pest/disease risk assessment
-        5. Harvesting recommendations
-        6. Field preparation activities
-        7. Emergency preparedness
+        5. Field work timing
+        6. Emergency preparedness if needed
         
         Format as detailed JSON with specific actions and timelines.
         """
@@ -456,12 +642,26 @@ def weather_farming_advisor(location_weather: str) -> dict:
             temperature=0.3
         )
         
+        ai_recommendations = json.loads(response.choices[0].message.content)
+        
         return {
             "success": True,
-            "weather_advice": response.choices[0].message.content,
-            "model": "llama-3.1-8b-instant"
+            "location": {
+                "city": location.get("city"),
+                "country": location.get("country"),
+                "coordinates": {
+                    "latitude": location.get("latitude"),
+                    "longitude": location.get("longitude")
+                }
+            },
+            "weather_summary": {
+                "current": weather_data["current"],
+                "forecast_summary": weather_data["forecast"]
+            },
+            "farming_recommendations": ai_recommendations,
+            "data_timestamp": datetime.datetime.now().isoformat()
         }
         
     except Exception as e:
-        return {"error": f"Failed to generate weather advice: {str(e)}"}
+        return {"error": f"Failed to generate weather-based farming advice: {str(e)}"}
 

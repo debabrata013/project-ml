@@ -1,5 +1,9 @@
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
 from google.adk.agents import LlmAgent
-from .tools import (
+from tools import (
     get_weather_forecast, 
     get_current_weather, 
     get_current_location, 
@@ -13,7 +17,7 @@ from .tools import (
     market_price_advisor,
     weather_farming_advisor
 )
-from .prompt import ROOT_AGENT_PROMPT
+from prompt import ROOT_AGENT_PROMPT
 
 MODEL = "gemini-1.5-flash"
 
