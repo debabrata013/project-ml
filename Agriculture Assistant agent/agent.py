@@ -15,7 +15,8 @@ from tools import (
     pest_disease_advisor,
     soil_analysis_advisor,
     market_price_advisor,
-    weather_farming_advisor
+    weather_farming_advisor,
+    recommend_suitable_crops
 )
 from prompt import ROOT_AGENT_PROMPT
 
@@ -38,6 +39,7 @@ root_agent = LlmAgent(
         pest_disease_advisor,
         soil_analysis_advisor,
         market_price_advisor,
-        weather_farming_advisor
+        weather_farming_advisor,
+        recommend_suitable_crops
     ],
 )

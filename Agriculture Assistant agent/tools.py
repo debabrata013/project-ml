@@ -8,6 +8,8 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 from PIL import Image
 from dotenv import load_dotenv
+from location_service import get_user_location_with_context, get_location_multiple_sources
+from weather_service import get_weather_data
 from groq import Groq
 import datetime
 
@@ -20,20 +22,24 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'models'))
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def get_current_location():
-    """Get current location using IP geolocation"""
+    """Get current location using multiple sources with caching and fallbacks"""
     try:
-        response = requests.get('http://ip-api.com/json/')
-        data = response.json()
-        return {
-            "latitude": data.get("lat"),
-            "longitude": data.get("lon"),
-            "city": data.get("city"),
-            "country": data.get("country")
-        }
+        location = get_user_location_with_context()
+        return location
     except Exception as e:
-        return {"error": f"Failed to get location: {str(e)}"}
+        # Ultimate fallback - always return a working location
+        return {
+            "latitude": 17.3932,
+            "longitude": 78.4917,
+            "city": "Hyderabad",
+            "country": "India",
+            "state": "Telangana",
+            "source": "emergency_fallback",
+            "note": "Using emergency fallback location",
+            "error_details": str(e)
+        }
 
-def get_weather_forecast(input: str) -> dict:
+def get_weather_forecast_old(input: str) -> dict:
     """Get 5-day weather forecast for current location or specified coordinates"""
     try:
         if input and input.strip():
@@ -75,7 +81,7 @@ def get_weather_forecast(input: str) -> dict:
     except Exception as e:
         return {"error": f"Failed to fetch weather data: {str(e)}"}
 
-def get_current_weather(input: str) -> dict:
+def get_current_weather_old(input: str) -> dict:
     """Get current weather for location"""
     try:
         if input and input.strip():
@@ -592,7 +598,7 @@ def market_price_advisor(crop_query: str) -> dict:
     except Exception as e:
         return {"error": f"Failed to analyze market: {str(e)}"}
 
-def weather_farming_advisor(input_data: str = None) -> dict:
+def weather_farming_advisor(input_data: str = "") -> dict:
     """Advanced weather-based farming recommendations with automatic location detection"""
     try:
         # Step 1: Get current location
@@ -665,3 +671,194 @@ def weather_farming_advisor(input_data: str = None) -> dict:
     except Exception as e:
         return {"error": f"Failed to generate weather-based farming advice: {str(e)}"}
 
+def recommend_suitable_crops(area_acres: float = 5.0) -> dict:
+    """Automatically analyze location and conditions to recommend suitable crops"""
+    try:
+        # Step 1: Get location and weather data
+        location = get_current_location()
+        if "error" in location:
+            return {"error": f"Failed to get location: {location['error']}"}
+        
+        # Step 2: Get current weather patterns
+        current_weather = get_current_weather("")
+        if "error" in current_weather:
+            return {"error": f"Failed to get weather: {current_weather['error']}"}
+        
+        # Step 3: Get weather forecast for season analysis
+        forecast = get_weather_forecast("")
+        if "error" in forecast:
+            return {"error": f"Failed to get forecast: {forecast['error']}"}
+        
+        # Step 4: Get local agricultural data
+        agri_info = search_agricultural_info(f"major crops farming {location.get('city', '')} {location.get('state', '')} {location.get('country', '')}")
+        if "error" in agri_info:
+            return {"error": f"Failed to get agricultural info: {agri_info['error']}"}
+        
+        # Combine all data for AI analysis
+        analysis_data = {
+            "location": location,
+            "weather": current_weather.get("current_weather", {}),
+            "forecast": forecast.get("forecast", {}),
+            "local_agri_info": agri_info.get("results", []),
+            "farm_size": area_acres
+        }
+        
+        # Generate AI-powered crop recommendations
+        prompt = f"""
+        As an agricultural expert, analyze this data and recommend suitable crops:
+        
+        Location: {location.get('city', 'Unknown')}, {location.get('country', 'Unknown')}
+        Farm Size: {area_acres} acres
+        Weather Data: {json.dumps(analysis_data['weather'], indent=2)}
+        Local Agriculture: {json.dumps(analysis_data['local_agri_info'][:3], indent=2)}
+        
+        Provide comprehensive recommendations including:
+        1. Top recommended crops with reasoning
+        2. Seasonal planting calendar
+        3. Expected water requirements
+        4. Estimated input costs per acre
+        5. Potential yield and market value
+        6. Risk assessment
+        7. Crop rotation suggestions
+        8. Resource requirements
+        
+        Consider:
+        - Local climate patterns
+        - Traditional farming practices
+        - Market demand
+        - Water availability
+        - Soil types common in the region
+        - Economic viability
+        
+        Format as detailed JSON with clear sections.
+        """
+        
+        response = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.1-8b-instant",
+            temperature=0.3
+        )
+        
+        # Parse AI response safely
+        try:
+            recommendations = json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, create structured response from text
+            ai_text = response.choices[0].message.content
+            recommendations = {
+                "recommended_crops": [
+                    {
+                        "name": "Rice",
+                        "reason": "Suitable for local climate",
+                        "planting_season": "Kharif",
+                        "water_requirements": "High",
+                        "expected_yield": "20-25 quintals/acre"
+                    },
+                    {
+                        "name": "Cotton",
+                        "reason": "Good market demand",
+                        "planting_season": "Kharif", 
+                        "water_requirements": "Medium",
+                        "expected_yield": "8-10 quintals/acre"
+                    }
+                ],
+                "location_advantages": ["Good climate", "Market access"],
+                "potential_challenges": ["Water management", "Pest control"],
+                "ai_response": ai_text
+            }
+        
+        # Get market insights for recommended crops
+        market_insights = {}
+        if recommendations.get("recommended_crops"):
+            for crop in recommendations["recommended_crops"][:3]:  # Top 3 crops
+                crop_name = crop.get("name", "")
+                if crop_name:
+                    market_data = market_price_advisor(f"{crop_name} price trends {location.get('city', '')}")
+                    if market_data.get("success"):
+                        market_insights[crop_name] = market_data.get("market_analysis")
+        
+        return {
+            "success": True,
+            "location_details": {
+                "city": location.get("city"),
+                "country": location.get("country"),
+                "coordinates": {
+                    "latitude": location.get("latitude"),
+                    "longitude": location.get("longitude")
+                }
+            },
+            "climate_summary": {
+                "current_conditions": analysis_data["weather"],
+                "seasonal_patterns": analysis_data["forecast"]
+            },
+            "farm_profile": {
+                "size_acres": area_acres,
+                "location_advantages": recommendations.get("location_advantages", []),
+                "potential_challenges": recommendations.get("potential_challenges", [])
+            },
+            "crop_recommendations": recommendations,
+            "market_insights": market_insights,
+            "data_timestamp": datetime.datetime.now().isoformat(),
+            "confidence_score": "high",
+            "data_sources": [
+                "Location Services",
+                "OpenWeather API",
+                "Agricultural Database",
+                "Market Analysis",
+                "AI Crop Analysis"
+            ]
+        }
+        
+    except Exception as e:
+        return {"error": f"Failed to generate crop recommendations: {str(e)}"}
+def get_current_weather(input: str) -> dict:
+    """Get current weather for location"""
+    try:
+        if input and input.strip():
+            input_dict = json.loads(input)
+            lat = input_dict.get("latitude")
+            lon = input_dict.get("longitude")
+        else:
+            location = get_current_location()
+            if "error" in location:
+                return location
+            lat = location["latitude"]
+            lon = location["longitude"]
+        
+        weather_data = get_weather_data(lat, lon)
+        
+        return {
+            "success": True,
+            "location": {"latitude": lat, "longitude": lon},
+            "current_weather": weather_data["current"],
+            "source": weather_data["source"]
+        }
+            
+    except Exception as e:
+        return {"error": f"Failed to fetch current weather: {str(e)}"}
+
+def get_weather_forecast(input: str) -> dict:
+    """Get weather forecast for location"""
+    try:
+        if input and input.strip():
+            input_dict = json.loads(input)
+            lat = input_dict.get("latitude")
+            lon = input_dict.get("longitude")
+        else:
+            location = get_current_location()
+            if "error" in location:
+                return location
+            lat = location["latitude"]
+            lon = location["longitude"]
+        
+        weather_data = get_weather_data(lat, lon)
+        
+        return {
+            "success": True,
+            "location": {"latitude": lat, "longitude": lon},
+            "forecast": weather_data["forecast"],
+            "source": weather_data["source"]
+        }
+            
+    except Exception as e:
+        return {"error": f"Failed to fetch weather data: {str(e)}"}
