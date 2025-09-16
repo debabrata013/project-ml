@@ -34,7 +34,7 @@ project-ml/
 
 ### 1. Clone the Repository
 ```bash
-git clone <repo-url>
+git clone https://github.com/debabrata013/project-ml.git
 cd project-ml
 ```
 
